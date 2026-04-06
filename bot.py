@@ -76,6 +76,7 @@ MESSAGES = {
         "rate_ok": "💱 *{code} → RUB*\n1 {code} = *{result:.2f} ₽*",
         "crypto_usage": "Укажи тикер. Пример: /crypto BTC",
         "crypto_fail": "❌ Не удалось найти «{symbol}». Попробуй полное название (например, bitcoin).",
+        "crypto_temp_fail": "⚠️ Временная ошибка источника цен для «{symbol}». Попробуй еще раз через пару секунд.",
         "crypto_ok": "{arrow} *{symbol}*\nЦена: *${price:,.2f}*\nЗа 24ч: {sign}{change:.2f}%",
         "convert_usage": "Пример: /convert 100 USD EUR",
         "convert_amount_error": "Первый аргумент должен быть числом. Пример: /convert 100 USD EUR",
@@ -123,6 +124,7 @@ MESSAGES = {
         "rate_ok": "💱 *{code} → RUB*\n1 {code} = *{result:.2f} ₽*",
         "crypto_usage": "Provide ticker. Example: /crypto BTC",
         "crypto_fail": "❌ Failed to find '{symbol}'. Try full coin name (for example, bitcoin).",
+        "crypto_temp_fail": "⚠️ Temporary price source error for '{symbol}'. Please try again in a few seconds.",
         "crypto_ok": "{arrow} *{symbol}*\nPrice: *${price:,.2f}*\n24h: {sign}{change:.2f}%",
         "convert_usage": "Example: /convert 100 USD EUR",
         "convert_amount_error": "First argument must be a number. Example: /convert 100 USD EUR",
@@ -261,7 +263,10 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     result = await get_crypto_price(symbol)
 
     if result is None:
-        await update.message.reply_text(_t(lang, "crypto_fail", symbol=symbol))
+        if is_known_ticker(symbol):
+            await update.message.reply_text(_t(lang, "crypto_temp_fail", symbol=symbol))
+        else:
+            await update.message.reply_text(_t(lang, "crypto_fail", symbol=symbol))
         return
 
     price, change_24h = result

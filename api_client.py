@@ -8,6 +8,7 @@
 
 import logging
 import time
+import asyncio
 from typing import Optional
 
 import httpx
@@ -128,10 +129,21 @@ async def get_crypto_price(symbol: str) -> Optional[tuple[float, float]]:
         "include_24hr_change": "true",
     }
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            response = await client.get(url, params=params)
+        # CoinGecko иногда отвечает 429 (rate limit) даже на популярных тикерах.
+        # Делаем короткий ретрай, чтобы снизить число ложных "не найдено".
+        data = None
+        for attempt in range(2):
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                response = await client.get(url, params=params)
+            if response.status_code == 429 and attempt == 0:
+                await asyncio.sleep(0.6)
+                continue
             response.raise_for_status()
             data = response.json()
+            break
+
+        if data is None:
+            return None
 
         coin_data = data.get(coin_id)
         if not coin_data:
