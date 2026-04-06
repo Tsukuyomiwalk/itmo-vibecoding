@@ -5,8 +5,8 @@ Year: 2025/2026
 Group: K?????  
 Author: Daniil Latanov  
 Lab: Lab1  
-Date of create: 06.04.2026  
-Date of finished: TODO (дата защиты)
+Date of create: 04.04.2026  
+Date of finished: 06.04.2026  
 
 # Лабораторная работа 1
 ## Создание первого Telegram-бота без программирования
@@ -79,7 +79,7 @@ Date of finished: TODO (дата защиты)
 6. Пример работы `/watch BTC` и `/watchlist`.
 
 Видео-демо (2-3 минуты):  
-TODO: вставить ссылку (YouTube / Google Drive).
+[Запись экрана 2026-04-06](https://drive.google.com/file/d/1h6lvpD1okxm-TsB4WntWQDWn21SDBVPz/view?usp=sharing)
 
 ## 8. Трудности и решения
 - Проблема: ошибки при отсутствии `BOT_TOKEN`.  

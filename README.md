@@ -4,6 +4,8 @@ Telegram-бот для отслеживания курсов фиатных ва
 
 **Username:** `@itmoftmi_daniil_latanov_bot`
 
+**Видео-демо:** [Запись экрана 2026-04-06](https://drive.google.com/file/d/1h6lvpD1okxm-TsB4WntWQDWn21SDBVPz/view?usp=sharing)
+
 ## Функционал
 
 | Команда | Описание | Пример |
