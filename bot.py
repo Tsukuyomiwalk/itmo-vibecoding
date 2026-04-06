@@ -17,7 +17,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
-from telegram import BotCommand, Update
+from telegram import BotCommand, ReplyKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -66,6 +66,7 @@ MESSAGES = {
             "/watch `<код>` — добавить в список наблюдения\n"
             "/unwatch `<код>` — удалить из списка\n"
             "/watchlist — текущие цены по списку\n"
+            "/popular — кнопки популярных валют и крипты\n"
             "/lang `<ru|en>` — сменить язык"
         ),
         "lang_usage": "Использование: /lang ru или /lang en",
@@ -90,6 +91,7 @@ MESSAGES = {
         "watchlist_empty": "Список пуст. Добавь тикеры командой /watch BTC или /watch USD",
         "watchlist_loading": "⏳ Получаю цены...",
         "watchlist_title": "📋 *Список наблюдения:*",
+        "popular_title": "⭐ Выбери популярный запрос кнопкой ниже:",
     },
     "en": {
         "start": (
@@ -111,6 +113,7 @@ MESSAGES = {
             "/watch `<code>` — add to watchlist\n"
             "/unwatch `<code>` — remove from watchlist\n"
             "/watchlist — current watchlist prices\n"
+            "/popular — quick buttons for popular symbols\n"
             "/lang `<ru|en>` — change language"
         ),
         "lang_usage": "Usage: /lang ru or /lang en",
@@ -135,6 +138,7 @@ MESSAGES = {
         "watchlist_empty": "Watchlist is empty. Add symbols with /watch BTC or /watch USD",
         "watchlist_loading": "⏳ Fetching prices...",
         "watchlist_title": "📋 *Watchlist:*",
+        "popular_title": "⭐ Tap a popular query button below:",
     },
 }
 
@@ -170,6 +174,7 @@ async def _set_bot_commands(app: Application) -> None:
         BotCommand("watch", "Add to watchlist / Добавить"),
         BotCommand("unwatch", "Remove from watchlist / Удалить"),
         BotCommand("watchlist", "Show watchlist / Список"),
+        BotCommand("popular", "Popular quick buttons / Популярное"),
         BotCommand("lang", "Language ru|en / Язык"),
     ]
     await app.bot.set_my_commands(commands)
@@ -206,6 +211,23 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         _t(candidate, "lang_saved", language=candidate.upper()),
         parse_mode="Markdown",
     )
+
+
+async def popular(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать быстрые кнопки популярных валют и криптовалют."""
+    lang = _resolve_lang(update)
+    keyboard = [
+        ["/rate USD", "/rate EUR", "/rate CNY"],
+        ["/crypto BTC", "/crypto ETH", "/crypto SOL"],
+        ["/watch USD", "/watch BTC", "/watchlist"],
+    ]
+    markup = ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        selective=True,
+    )
+    await update.message.reply_text(_t(lang, "popular_title"), reply_markup=markup)
 
 
 async def rate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -374,6 +396,7 @@ def main() -> None:
     app.add_handler(CommandHandler("watch", watch))
     app.add_handler(CommandHandler("unwatch", unwatch))
     app.add_handler(CommandHandler("watchlist", watchlist))
+    app.add_handler(CommandHandler("popular", popular))
     app.add_handler(CommandHandler("lang", set_language))
     app.post_init = _set_bot_commands
 
