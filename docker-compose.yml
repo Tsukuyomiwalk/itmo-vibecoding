@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  bot:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - DB_PATH=/app/data/bot.db
+    volumes:
+      # Персистентное хранилище базы данных
+      - ./data:/app/data
+    restart: unless-stopped

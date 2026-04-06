@@ -1,0 +1,19 @@
+# Секреты — никогда не коммитить!
+.env
+
+# База данных бота
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Логи
+*.log
+
+# macOS
+.DS_Store
