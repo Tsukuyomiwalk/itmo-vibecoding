@@ -38,6 +38,13 @@ def init_db() -> None:
                 PRIMARY KEY (user_id, code)
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id  INTEGER PRIMARY KEY,
+                language TEXT NOT NULL DEFAULT 'ru',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
         conn.commit()
 
 
@@ -87,3 +94,30 @@ def get_watchlist(user_id: int) -> list[tuple[str, str]]:
             (user_id,),
         ).fetchall()
     return [(row["code"], row["kind"]) for row in rows]
+
+
+def get_user_language(user_id: int) -> str | None:
+    """Вернуть язык пользователя (ru/en), если ранее был сохранен."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT language FROM user_settings WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return row["language"]
+
+
+def set_user_language(user_id: int, language: str) -> None:
+    """Сохранить язык пользователя (upsert)."""
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_settings (user_id, language, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(user_id)
+            DO UPDATE SET language = excluded.language, updated_at = datetime('now')
+            """,
+            (user_id, language),
+        )
+        conn.commit()

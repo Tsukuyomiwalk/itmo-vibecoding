@@ -17,7 +17,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -30,6 +30,8 @@ from database import (
     add_to_watchlist,
     remove_from_watchlist,
     get_watchlist,
+    get_user_language,
+    set_user_language,
 )
 
 load_dotenv()
@@ -41,71 +43,203 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+SUPPORTED_LANGS = {"ru", "en"}
+
+MESSAGES = {
+    "ru": {
+        "start": (
+            "👋 Привет! Я *CryptoRates Bot* — слежу за курсами валют и крипты.\n\n"
+            "Попробуй:\n"
+            "  /rate USD\n"
+            "  /crypto BTC\n"
+            "  /convert 100 USD EUR\n"
+            "  /help — полный список команд"
+        ),
+        "help": (
+            "📖 *Команды бота:*\n\n"
+            "/rate `<код>` — курс валюты к RUB\n"
+            "  Пример: `/rate USD`\n\n"
+            "/crypto `<код>` — цена криптовалюты в USD\n"
+            "  Пример: `/crypto BTC`\n\n"
+            "/convert `<сумма> <из> <в>` — конвертация\n"
+            "  Пример: `/convert 100 USD EUR`\n\n"
+            "/watch `<код>` — добавить в список наблюдения\n"
+            "/unwatch `<код>` — удалить из списка\n"
+            "/watchlist — текущие цены по списку\n"
+            "/lang `<ru|en>` — сменить язык"
+        ),
+        "lang_usage": "Использование: /lang ru или /lang en",
+        "lang_saved": "✅ Язык переключен на *{language}*.",
+        "rate_usage": "Укажи код валюты. Пример: /rate USD",
+        "rate_fail": "❌ Не удалось получить курс для «{code}». Проверь код валюты.",
+        "rate_ok": "💱 *{code} → RUB*\n1 {code} = *{result:.2f} ₽*",
+        "crypto_usage": "Укажи тикер. Пример: /crypto BTC",
+        "crypto_fail": "❌ Не удалось найти «{symbol}». Попробуй полное название (например, bitcoin).",
+        "crypto_ok": "{arrow} *{symbol}*\nЦена: *${price:,.2f}*\nЗа 24ч: {sign}{change:.2f}%",
+        "convert_usage": "Пример: /convert 100 USD EUR",
+        "convert_amount_error": "Первый аргумент должен быть числом. Пример: /convert 100 USD EUR",
+        "convert_fail": "❌ Не удалось конвертировать {from_cur} → {to_cur}.",
+        "convert_ok": "💱 *{amount:,.2f} {from_cur}* = *{result:,.2f} {to_cur}*",
+        "watch_usage": "Укажи код. Пример: /watch BTC или /watch USD",
+        "watch_unknown": "❓ Тикер «{code}» не найден. Попробуй: /watch BTC, /watch USD, /watch ETH",
+        "watch_added": "✅ *{code}* добавлен в список наблюдения.",
+        "watch_exists": "«{code}» уже в твоем списке.",
+        "unwatch_usage": "Укажи код. Пример: /unwatch BTC",
+        "unwatch_removed": "🗑 *{code}* удален из списка.",
+        "unwatch_missing": "«{code}» не найден в твоем списке.",
+        "watchlist_empty": "Список пуст. Добавь тикеры командой /watch BTC или /watch USD",
+        "watchlist_loading": "⏳ Получаю цены...",
+        "watchlist_title": "📋 *Список наблюдения:*",
+    },
+    "en": {
+        "start": (
+            "👋 Hi! I am *CryptoRates Bot* and I track fiat and crypto prices.\n\n"
+            "Try:\n"
+            "  /rate USD\n"
+            "  /crypto BTC\n"
+            "  /convert 100 USD EUR\n"
+            "  /help — full command list"
+        ),
+        "help": (
+            "📖 *Bot commands:*\n\n"
+            "/rate `<code>` — fiat rate to RUB\n"
+            "  Example: `/rate USD`\n\n"
+            "/crypto `<ticker>` — crypto price in USD\n"
+            "  Example: `/crypto BTC`\n\n"
+            "/convert `<amount> <from> <to>` — convert currencies\n"
+            "  Example: `/convert 100 USD EUR`\n\n"
+            "/watch `<code>` — add to watchlist\n"
+            "/unwatch `<code>` — remove from watchlist\n"
+            "/watchlist — current watchlist prices\n"
+            "/lang `<ru|en>` — change language"
+        ),
+        "lang_usage": "Usage: /lang ru or /lang en",
+        "lang_saved": "✅ Language switched to *{language}*.",
+        "rate_usage": "Provide currency code. Example: /rate USD",
+        "rate_fail": "❌ Failed to get rate for '{code}'. Please check the code.",
+        "rate_ok": "💱 *{code} → RUB*\n1 {code} = *{result:.2f} ₽*",
+        "crypto_usage": "Provide ticker. Example: /crypto BTC",
+        "crypto_fail": "❌ Failed to find '{symbol}'. Try full coin name (for example, bitcoin).",
+        "crypto_ok": "{arrow} *{symbol}*\nPrice: *${price:,.2f}*\n24h: {sign}{change:.2f}%",
+        "convert_usage": "Example: /convert 100 USD EUR",
+        "convert_amount_error": "First argument must be a number. Example: /convert 100 USD EUR",
+        "convert_fail": "❌ Failed to convert {from_cur} → {to_cur}.",
+        "convert_ok": "💱 *{amount:,.2f} {from_cur}* = *{result:,.2f} {to_cur}*",
+        "watch_usage": "Provide code. Example: /watch BTC or /watch USD",
+        "watch_unknown": "❓ Ticker '{code}' not found. Try: /watch BTC, /watch USD, /watch ETH",
+        "watch_added": "✅ *{code}* added to watchlist.",
+        "watch_exists": "'{code}' is already in your watchlist.",
+        "unwatch_usage": "Provide code. Example: /unwatch BTC",
+        "unwatch_removed": "🗑 *{code}* removed from watchlist.",
+        "unwatch_missing": "'{code}' not found in your watchlist.",
+        "watchlist_empty": "Watchlist is empty. Add symbols with /watch BTC or /watch USD",
+        "watchlist_loading": "⏳ Fetching prices...",
+        "watchlist_title": "📋 *Watchlist:*",
+    },
+}
+
+
+def _resolve_lang(update: Update) -> str:
+    user = update.effective_user
+    if not user:
+        return "ru"
+
+    stored = get_user_language(user.id)
+    if stored in SUPPORTED_LANGS:
+        return stored
+
+    tg_lang = (user.language_code or "").lower()
+    auto_lang = "en" if tg_lang.startswith("en") else "ru"
+    set_user_language(user.id, auto_lang)
+    return auto_lang
+
+
+def _t(lang: str, key: str, **kwargs: object) -> str:
+    template = MESSAGES.get(lang, MESSAGES["ru"]).get(key, "")
+    return template.format(**kwargs)
+
+
+async def _set_bot_commands(app: Application) -> None:
+    """Публикуем команды в меню Telegram при запуске бота."""
+    commands = [
+        BotCommand("start", "Start / Начать"),
+        BotCommand("help", "Help / Помощь"),
+        BotCommand("rate", "Fiat rate / Курс валюты"),
+        BotCommand("crypto", "Crypto price / Курс крипты"),
+        BotCommand("convert", "Convert currency / Конвертация"),
+        BotCommand("watch", "Add to watchlist / Добавить"),
+        BotCommand("unwatch", "Remove from watchlist / Удалить"),
+        BotCommand("watchlist", "Show watchlist / Список"),
+        BotCommand("lang", "Language ru|en / Язык"),
+    ]
+    await app.bot.set_my_commands(commands)
+    logger.info("Команды бота опубликованы в Telegram меню.")
 
 
 # ─── Handlers ────────────────────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = _resolve_lang(update)
+    await update.message.reply_text(_t(lang, "start"), parse_mode="Markdown")
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = _resolve_lang(update)
+    await update.message.reply_text(_t(lang, "help"), parse_mode="Markdown")
+
+
+async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    current_lang = _resolve_lang(update)
+    if not update.effective_user:
+        return
+    if not context.args:
+        await update.message.reply_text(_t(current_lang, "lang_usage"))
+        return
+
+    candidate = context.args[0].lower().strip()
+    if candidate not in SUPPORTED_LANGS:
+        await update.message.reply_text(_t(current_lang, "lang_usage"))
+        return
+
+    set_user_language(update.effective_user.id, candidate)
     await update.message.reply_text(
-        "👋 Привет! Я *CryptoRates Bot* — слежу за курсами валют и крипты.\n\n"
-        "Попробуй:\n"
-        "  /rate USD\n"
-        "  /crypto BTC\n"
-        "  /convert 100 USD EUR\n"
-        "  /help — полный список команд",
+        _t(candidate, "lang_saved", language=candidate.upper()),
         parse_mode="Markdown",
     )
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "📖 *Команды бота:*\n\n"
-        "/rate `<код>` — курс валюты к RUB\n"
-        "  Пример: `/rate USD`\n\n"
-        "/crypto `<код>` — цена криптовалюты в USD\n"
-        "  Пример: `/crypto BTC`\n\n"
-        "/convert `<сумма> <из> <в>` — конвертация\n"
-        "  Пример: `/convert 100 USD EUR`\n\n"
-        "/watch `<код>` — добавить в список наблюдения\n"
-        "/unwatch `<код>` — удалить из списка\n"
-        "/watchlist — текущие цены по списку"
-    )
-    await update.message.reply_text(text, parse_mode="Markdown")
-
-
 async def rate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показать курс валюты к RUB."""
+    lang = _resolve_lang(update)
     if not context.args:
-        await update.message.reply_text("Укажи код валюты. Пример: /rate USD")
+        await update.message.reply_text(_t(lang, "rate_usage"))
         return
 
     code = context.args[0].upper()
     result = await get_exchange_rate(code)
 
     if result is None:
-        await update.message.reply_text(f"❌ Не удалось получить курс для «{code}». Проверь код валюты.")
+        await update.message.reply_text(_t(lang, "rate_fail", code=code))
         return
 
     await update.message.reply_text(
-        f"💱 *{code} → RUB*\n"
-        f"1 {code} = *{result:.2f} ₽*",
+        _t(lang, "rate_ok", code=code, result=result),
         parse_mode="Markdown",
     )
 
 
 async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показать цену криптовалюты в USD."""
+    lang = _resolve_lang(update)
     if not context.args:
-        await update.message.reply_text("Укажи тикер. Пример: /crypto BTC")
+        await update.message.reply_text(_t(lang, "crypto_usage"))
         return
 
     symbol = context.args[0].upper()
     result = await get_crypto_price(symbol)
 
     if result is None:
-        await update.message.reply_text(
-            f"❌ Не удалось найти «{symbol}». Попробуй полное название (например, bitcoin)."
-        )
+        await update.message.reply_text(_t(lang, "crypto_fail", symbol=symbol))
         return
 
     price, change_24h = result
@@ -113,23 +247,22 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     sign = "+" if change_24h >= 0 else ""
 
     await update.message.reply_text(
-        f"{arrow} *{symbol}*\n"
-        f"Цена: *${price:,.2f}*\n"
-        f"За 24ч: {sign}{change_24h:.2f}%",
+        _t(lang, "crypto_ok", arrow=arrow, symbol=symbol, price=price, sign=sign, change=change_24h),
         parse_mode="Markdown",
     )
 
 
 async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Конвертировать сумму из одной валюты в другую."""
+    lang = _resolve_lang(update)
     if len(context.args) < 3:
-        await update.message.reply_text("Пример: /convert 100 USD EUR")
+        await update.message.reply_text(_t(lang, "convert_usage"))
         return
 
     try:
         amount = float(context.args[0].replace(",", "."))
     except ValueError:
-        await update.message.reply_text("Первый аргумент должен быть числом. Пример: /convert 100 USD EUR")
+        await update.message.reply_text(_t(lang, "convert_amount_error"))
         return
 
     from_cur = context.args[1].upper()
@@ -138,42 +271,42 @@ async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     result = await convert_currency(amount, from_cur, to_cur)
 
     if result is None:
-        await update.message.reply_text(f"❌ Не удалось конвертировать {from_cur} → {to_cur}.")
+        await update.message.reply_text(_t(lang, "convert_fail", from_cur=from_cur, to_cur=to_cur))
         return
 
     await update.message.reply_text(
-        f"💱 *{amount:,.2f} {from_cur}* = *{result:,.2f} {to_cur}*",
+        _t(lang, "convert_ok", amount=amount, from_cur=from_cur, result=result, to_cur=to_cur),
         parse_mode="Markdown",
     )
 
 
 async def watch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Добавить тикер в список наблюдения."""
+    lang = _resolve_lang(update)
     if not context.args:
-        await update.message.reply_text("Укажи код. Пример: /watch BTC или /watch USD")
+        await update.message.reply_text(_t(lang, "watch_usage"))
         return
 
     code = context.args[0].upper()
 
     if not is_known_ticker(code):
-        await update.message.reply_text(
-            f"❓ Тикер «{code}» не найден. Попробуй: /watch BTC, /watch USD, /watch ETH"
-        )
+        await update.message.reply_text(_t(lang, "watch_unknown", code=code))
         return
 
     user_id = update.effective_user.id
     added = add_to_watchlist(user_id, code)
 
     if added:
-        await update.message.reply_text(f"✅ *{code}* добавлен в список наблюдения.", parse_mode="Markdown")
+        await update.message.reply_text(_t(lang, "watch_added", code=code), parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"«{code}» уже в твоём списке.")
+        await update.message.reply_text(_t(lang, "watch_exists", code=code))
 
 
 async def unwatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Удалить тикер из списка наблюдения."""
+    lang = _resolve_lang(update)
     if not context.args:
-        await update.message.reply_text("Укажи код. Пример: /unwatch BTC")
+        await update.message.reply_text(_t(lang, "unwatch_usage"))
         return
 
     code = context.args[0].upper()
@@ -181,23 +314,22 @@ async def unwatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     removed = remove_from_watchlist(user_id, code)
 
     if removed:
-        await update.message.reply_text(f"🗑 *{code}* удалён из списка.", parse_mode="Markdown")
+        await update.message.reply_text(_t(lang, "unwatch_removed", code=code), parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"«{code}» не найден в твоём списке.")
+        await update.message.reply_text(_t(lang, "unwatch_missing", code=code))
 
 
 async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показать список наблюдения с актуальными ценами."""
+    lang = _resolve_lang(update)
     user_id = update.effective_user.id
     items = get_watchlist(user_id)
 
     if not items:
-        await update.message.reply_text(
-            "Список пуст. Добавь тикеры командой /watch BTC или /watch USD"
-        )
+        await update.message.reply_text(_t(lang, "watchlist_empty"))
         return
 
-    await update.message.reply_text("⏳ Получаю цены...")
+    await update.message.reply_text(_t(lang, "watchlist_loading"))
 
     # Batch-запрос для всех крипто-тикеров за один HTTP-вызов
     crypto_symbols = [code for code, kind in items if kind == "crypto"]
@@ -220,7 +352,7 @@ async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             else:
                 lines.append(f"• *{code}* — н/д")
 
-    text = "📋 *Список наблюдения:*\n\n" + "\n".join(lines)
+    text = _t(lang, "watchlist_title") + "\n\n" + "\n".join(lines)
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
@@ -242,6 +374,8 @@ def main() -> None:
     app.add_handler(CommandHandler("watch", watch))
     app.add_handler(CommandHandler("unwatch", unwatch))
     app.add_handler(CommandHandler("watchlist", watchlist))
+    app.add_handler(CommandHandler("lang", set_language))
+    app.post_init = _set_bot_commands
 
     logger.info("Бот запущен (polling mode)...")
     app.run_polling(drop_pending_updates=True)
