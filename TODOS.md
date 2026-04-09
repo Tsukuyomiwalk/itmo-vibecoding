@@ -2,19 +2,32 @@
 
 ## P1 — Before sharing with real users
 
-### Tests (4 critical)
-**What:** Write 4 pytest tests for the alert and payment features.
-**Why:** No tests exist. Shipping idempotency logic and atomic DB transactions without tests means silent failures are undetectable.
-**Pros:** Catches double-fire bugs, rollback failures, FIFO edge cases before a real user hits them.
-**Cons:** ~15 min with CC.
-**Context:** The 4 tests are already spec'd in the CEO review:
-  1. `test_alert_fires_when_rate_above_target` — mock API, insert alert, run check_alerts(), assert was_triggered=1
-  2. `test_alert_does_not_double_fire` — insert alert with was_triggered=1, run job, assert send_message NOT called
-  3. `test_payment_and_alert_created_atomically` — simulate DB error on alert insert, assert payments table also empty
-  4. `test_converted_fifo_picks_oldest_payment` — insert 2 pending USD payments, /converted, assert oldest marked
-**Effort:** S (human: ~1 day / CC: ~15min)
+### Tests (~30 tests, full coverage)
+**What:** Write ~30 pytest tests covering all new features: alerts, payments, conversions, scheduler, handlers.
+**Why:** No tests exist. Shipping idempotency logic, atomic DB transactions, and FIFO matching without tests means silent failures are undetectable.
+**Pros:** Catches double-fire bugs, rollback failures, FIFO edge cases, handler input validation, API failure paths before a real user hits them.
+**Cons:** ~30 min with CC.
+**Context:** Test plan spec'd in eng review (2026-04-07). Four critical tests (from CEO review) plus full coverage:
+  - `tests/test_scheduler.py` — check_alerts() (fires, no double-fire, direction='below', API failure, trend context)
+  - `tests/test_database.py` — CRUD, atomic /payment rollback, FIFO /converted, P&L calculation
+  - `tests/test_handlers.py` — /alert, /alerts, /payment, /converted input validation + responses
+  - `tests/test_api_client.py` — get_fiat_rates_batch() + exchangerate-api.com URL verification
+  Use pytest + monkeypatch. SQLite in-memory (:memory:) for DB tests. unittest.mock for Telegram + API.
+**Effort:** S (human: ~1 day / CC: ~30min)
 **Priority:** P1
 **Depends on:** Alerts + payment feature shipped
+
+---
+
+### Per-User Alert Cap
+**What:** Limit each user to a maximum of 10 active (untriggered) alerts at any time.
+**Why:** Without a cap, a user can create unlimited alert rows. check_alerts() iterates all rows every 5 minutes, so unbounded growth degrades polling performance.
+**Pros:** Protects check_alerts() loop from being a linear scan over thousands of rows.
+**Cons:** Users with genuinely many alerts are capped. Limit is somewhat arbitrary.
+**Context:** Not a real concern at 0-1 users. Add when check_alerts() latency becomes measurable or first user complains. Implement as: COUNT active alerts for user before INSERT; return error message if >= 10.
+**Effort:** S (human: ~1h / CC: ~5min)
+**Priority:** P2
+**Depends on:** Alerts feature shipped, real users observed
 
 ---
 

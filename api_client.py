@@ -2,8 +2,8 @@
 Клиент для внешних API.
 
 Источники данных:
-  - Курсы фиатных валют: https://open.er-api.com/v6/latest/  (бесплатно, без ключа)
-  - Криптовалюты:        https://api.coingecko.com/api/v3/    (бесплатно, без ключа)
+  - Курсы фиатных валют: https://open.exchangerate-api.com/v6/latest/  (бесплатно, без ключа, 10k req/month)
+  - Криптовалюты:        https://api.coingecko.com/api/v3/              (бесплатно, без ключа)
 """
 
 import logging
@@ -62,7 +62,7 @@ _COINGECKO_IDS: dict[str, str] = {
 
 _TIMEOUT = httpx.Timeout(10.0)
 
-# Популярные фиатные коды — для валидации в /watch
+# Популярные фиатные коды — для валидации в /watch и /alert
 KNOWN_FIAT_CODES: set[str] = {
     "USD", "EUR", "GBP", "JPY", "CNY", "CHF", "CAD", "AUD", "NZD",
     "HKD", "SGD", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "TRY",
@@ -91,7 +91,7 @@ async def get_exchange_rate(currency_code: str) -> Optional[float]:
     if cached is not None:
         return cached  # type: ignore[return-value]
 
-    url = "https://open.er-api.com/v6/latest/RUB"
+    url = "https://open.exchangerate-api.com/v6/latest/RUB"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             response = await client.get(url)
@@ -109,6 +109,36 @@ async def get_exchange_rate(currency_code: str) -> Optional[float]:
     except Exception as exc:
         logger.error("Ошибка получения курса %s: %s", currency_code, exc)
         return None
+
+
+async def get_fiat_rates_batch(codes: list[str]) -> dict[str, float]:
+    """
+    Получить курсы нескольких фиатных валют за один запрос к /latest/RUB.
+    Возвращает dict: {CODE: rate_in_rub} для найденных кодов.
+    Один HTTP-запрос независимо от числа кодов — O(1) по API-вызовам.
+    """
+    if not codes:
+        return {}
+
+    upper_codes = [c.upper() for c in codes]
+
+    url = "https://open.exchangerate-api.com/v6/latest/RUB"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+        rates = data.get("rates", {})
+        result: dict[str, float] = {}
+        for code in upper_codes:
+            rate_per_rub = rates.get(code)
+            if rate_per_rub and rate_per_rub > 0:
+                result[code] = 1.0 / rate_per_rub
+        return result
+    except Exception as exc:
+        logger.error("Ошибка batch-запроса фиата: %s", exc)
+        return {}
 
 
 async def get_crypto_price(symbol: str) -> Optional[tuple[float, float]]:
@@ -208,7 +238,7 @@ async def convert_currency(amount: float, from_cur: str, to_cur: str) -> Optiona
     if cached_rate is not None:
         return amount * cached_rate  # type: ignore[operator]
 
-    url = f"https://open.er-api.com/v6/latest/{from_cur.upper()}"
+    url = f"https://open.exchangerate-api.com/v6/latest/{from_cur.upper()}"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             response = await client.get(url)
